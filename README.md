@@ -5,4 +5,4 @@ This is a C++ interface that connects an ESP32 Microcontroller to a XBee module 
 - Add ``xbee_api.hpp`` and ``json.hpp`` to the ``include`` directory of the ESP32 project 
 
 ## Licensing Information
-This file uses json.hpp by Niels Lohmann which is licensed under the [MIT License](https://opensource.org/licenses/MIT). Copyright &copy; 2013-2022 [Niels Lohmann](https://nlohmann.me).
+This class uses json.hpp by Niels Lohmann which is licensed under the [MIT License](https://opensource.org/licenses/MIT). Copyright &copy; 2013-2022 [Niels Lohmann](https://nlohmann.me).
