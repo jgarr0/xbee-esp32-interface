@@ -1,6 +1,6 @@
-#include <xbee_api.hpp>
+#include "xbee_api.hpp"
 
-static uint8_t GLOBAL_FRAME_ID = 0x01;
+uint8_t GLOBAL_FRAME_ID = 0x01;
 
 void frameIDIncrement(){
     // avoid ID == 0 to always have a response
@@ -151,6 +151,51 @@ uint8_t* formTXFrame(std::string RFData, uint64_t dst_64, uint16_t dst_16, uint8
     return framePtr;
 }
 
+uint8_t* formTXFrame(std::vector<uint8_t> *RFData, uint64_t dst_64, uint16_t dst_16, uint8_t bcr, uint8_t opt){
+    // 18 bytes of overhead in TX frame
+    uint16_t frameSize = 18;
+    uint16_t RFMax = 0x100;
+    // check for encryption enabled
+    if((opt & 2) == 0x02)
+        RFMax -=4;
+    // get length of RFData
+    uint16_t RFSize = RFData->size();
+    // only capture up to 256 bytes // throw error if too big
+    if(RFSize > RFMax)
+        return nullptr;
+    // total frame size
+    frameSize += RFSize;
+
+    // begin forming frame
+    uint8_t* framePtr = new uint8_t[frameSize]();
+    framePtr[0] = 0x7E;
+    // assign sizes
+    framePtr[1] = (frameSize-4) >> 8;
+    framePtr[2] = (frameSize-4);
+    // assign frame type and ID
+    framePtr[3] = 0x10;
+    // assign + increment running frame ID
+    framePtr[4] = GLOBAL_FRAME_ID;
+    frameIDIncrement();
+    // assign 8 byte address
+    for(int i = 0; i < 8; ++i){
+        framePtr[i+5] = dst_64 >> (56-(8*i));
+    }
+    //assign 2 byte address
+    framePtr[13] = dst_16 >> 8;
+    framePtr[14] = dst_16;
+    // assign BCR and OPT
+    framePtr[15] = bcr;
+    framePtr[16] = opt;
+    // assign RF data
+    for(int i = 0; i < RFSize; ++i){
+        framePtr[17+i] = RFData->at(i);
+    }
+    // assign checksum
+    framePtr[frameSize-1] = calculateCHKSM(framePtr, frameSize);
+    return framePtr;
+}
+
 uint8_t* formATFrame_Remote(std::string ATCommand, uint64_t dst_64, std::string newvalue, uint8_t opt, uint16_t dst_16){
     // 19 bytes without optional value
     uint16_t frameSize = 19;
@@ -210,10 +255,12 @@ json* parseATCR(uint8_t* frame, uint16_t frameLength){
         data += char(frame[i+8]);
     }
     json *tmp = new json{
-        {"FRAME TYPE", "Local AT Command Response"},
-        {"FRAME ID", frame[4]},
-        {"COMMAND", cmd},
-        {"STATUS", frame[7]},
+        {"DESC", "Local AT Command Response"},
+        {"TYPE", 0x88},
+        {"OVERHEAD", {
+            {"FRAME ID", frame[4]},
+            {"COMMAND", cmd},
+            {"STATUS", frame[7]}}},
         {"DATA",data}
     };
     return tmp;
@@ -221,36 +268,39 @@ json* parseATCR(uint8_t* frame, uint16_t frameLength){
 
 json* parseMS(uint8_t* frame, uint16_t frameLength){
     json *tmp = new json{
-        {"FRAME TYPE", "MODEM STATUS"},
-        {"FRAME ID", frame[3]},
-        {"STATUS", frame[4]},
+        {"DESC", "MODEM STATUS"},
+        {"TYPE", 0x8A},
+        {"OVERHEAD", {"FRAME ID", frame[3]}},
+        {"DATA", {"STATUS", frame[4]}}
     };
     return tmp;
 }
 
 json* parseTS(uint8_t* frame, uint16_t frameLength){
-    std::string dst = "0x";
-    dst += char(frame[5]);
-    dst += char(frame[6]);
+    uint32_t dst = 0;
+    dst += uint8_t(frame[5]);
+    dst += uint8_t(frame[6]);
     json *tmp = new json{
-        {"FRAME TYPE", "Transmission Status"},
-        {"FRAME ID", frame[4]},
-        {"DESTINATION", dst},
-        {"TRANSMIT RETRY", frame[7]},
-        {"DELIVERY STATUS", frame[8]},
-        {"DISCOVERY STATUS", frame[9]}
+        {"DESC", "Transmission Status"},
+        {"TYPE", 0x8B},
+        {"OVERHEAD", {"FRAME ID", frame[4]}},
+        {"DATA", {
+            {"DESTINATION", dst},
+            {"TRANSMIT RETRY", frame[7]},
+            {"DELIVERY STATUS", frame[8]},
+            {"DISCOVERY STATUS", frame[9]}}},
     };
     return tmp;
 }
 
 json* receivePacket(uint8_t* frame, uint16_t frameLength){
     // get addresses
-    std::string dst64 = "0x";
+    uint32_t dst64 = 0;
     for(int i = 0; i <8; ++i)
-        dst64 += char(frame[i+4]);
-    std::string dst16 = "0x";
-    dst16 += char(frame[12]);
-    dst16 += char(frame[13]);
+        dst64 += uint8_t(frame[i+4]);
+    uint32_t dst16 = 0;
+    dst16 += uint8_t(frame[12]);
+    dst16 += uint8_t(frame[13]);
     std::string data = "";
     // length > 12 means there is data
     if(frameLength > 12){
@@ -258,11 +308,13 @@ json* receivePacket(uint8_t* frame, uint16_t frameLength){
         data += char(frame[i+15]);
     }
     json *tmp = new json{
-        {"FRAME TYPE", "Receive Packet"},
-        {"FRAME ID", frame[4]},
-        {"DST64", dst64},
-        {"DST16", dst16},
-        {"OPT", frame[14]},
+        {"DESC", "Receive Packet"},
+        {"TYPE", 0x90},
+        {"OVERHEAD", {
+            {"FRAME ID", frame[4]},
+            {"DST64", dst64},
+            {"DST16", dst16},
+            {"OPT", frame[14]}}},
         {"DATA",data}
     };
     return tmp;
@@ -270,18 +322,18 @@ json* receivePacket(uint8_t* frame, uint16_t frameLength){
 
 json* explicitRX(uint8_t* frame, uint16_t frameLength){
     // get addresses
-    std::string dst64 = "0x";
+    uint32_t dst64 = 0;
     for(int i = 0; i <8; ++i)
-        dst64 += char(frame[i+4]);
-    std::string dst16 = "0x";
-    dst16 += char(frame[12]);
-    dst16 += char(frame[13]);
-    std::string cluster = "0x";
-    cluster+= char(frame[16]);
-    cluster+= char(frame[17]);
-    std::string profile = "0x";
-    cluster+= char(frame[18]);
-    cluster+= char(frame[19]);
+        dst64 += uint8_t(frame[i+4]);
+    uint32_t dst16 = 0;
+    dst16 += uint8_t(frame[12]);
+    dst16 += uint8_t(frame[13]);
+    uint32_t cluster = 0;
+    cluster+= uint8_t(frame[16]);
+    cluster+= uint8_t(frame[17]);
+    uint32_t profile = 0;
+    profile+= uint8_t(frame[18]);
+    profile+= uint8_t(frame[19]);
     std::string data = "";
     // length > 18 means there is data
     if(frameLength > 18){
@@ -289,15 +341,17 @@ json* explicitRX(uint8_t* frame, uint16_t frameLength){
         data += char(frame[i+21]);
     }
     json *tmp = new json{
-        {"FRAME TYPE", "Receive Packet"},
-        {"FRAME ID", frame[4]},
-        {"DST64", dst64},
-        {"DST16", dst16},
-        {"SRC", frame[14]},
-        {"DST", frame[15]},
-        {"CLUSTER", cluster},
-        {"PROFILE", profile},
-        {"OPT", frame[20]},
+        {"DESC", "Receive Packet"},
+        {"TYPE", 0x91},
+        {"OVERHEAD", {
+            {"FRAME ID", frame[4]},
+            {"DST64", dst64},
+            {"DST16", dst16},
+            {"SRC", frame[14]},
+            {"DST", frame[15]},
+            {"CLUSTER", cluster},
+            {"PROFILE", profile},
+            {"OPT", frame[20]}}},
         {"DATA",data}
     };
     return tmp;
@@ -305,12 +359,12 @@ json* explicitRX(uint8_t* frame, uint16_t frameLength){
 
 json* remoteAT(uint8_t* frame, uint16_t frameLength){
     // get addresses
-    std::string dst64 = "0x";
+    uint32_t dst64 = 0;
     for(int i = 0; i <8; ++i)
-        dst64 += char(frame[i+5]);
-    std::string dst16 = "0x";
-    dst16 += char(frame[13]);
-    dst16 += char(frame[14]);
+        dst64 += uint8_t(frame[i+5]);
+    uint32_t dst16 = 0;
+    dst16 += uint8_t(frame[13]);
+    dst16 += uint8_t(frame[14]);
     std::string cmd = "0x";
     cmd += char(frame[15]);
     cmd += char(frame[16]);
@@ -321,22 +375,28 @@ json* remoteAT(uint8_t* frame, uint16_t frameLength){
         data += char(frame[i+18]);
     }
     json *tmp = new json{
-        {"FRAME TYPE", "Receive Packet"},
-        {"FRAME ID", frame[4]},
-        {"DST64", dst64},
-        {"DST16", dst16},
-        {"AT CMD", cmd},
-        {"STATUS", frame[17]},
-        {"DATA",data}
+        {"DESC", "Receive Packet"},
+        {"TYPE", 0x97},
+        {"OVERHEAD", {
+            {"FRAME ID", frame[4]},
+            {"DST64", dst64},
+            {"DST16", dst16}}},
+        {"DATA",{
+            {"DATA", data},
+            {"AT CMD", cmd},
+            {"STATUS", frame[17]}}},
+
     };
     return tmp;
 }
 
 json* readFrame(uint8_t* frame){
-    // return nullptr if not valid
-    if(frame[0] != 0x7E)
-        return nullptr;
+    // return -2 if not valid
     json *data = nullptr;
+    if(frame[0] != 0x7E){
+        *data = -2;
+        return data;
+    }
     // find data size
     uint16_t frameLength = frame[1] + frame[2];
     // read in appropriate data based on frame type
@@ -365,7 +425,9 @@ json* readFrame(uint8_t* frame){
         case 0x97:
             data = remoteAT(frame, frameLength);
             break;
+        // unknown case return -1
         default:
+            *data = -1;
             break;
     }
     return data;
