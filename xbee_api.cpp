@@ -1,4 +1,5 @@
 #include "xbee_api.hpp"
+#include <iostream>
 
 uint8_t GLOBAL_FRAME_ID = 0x01;
 
@@ -254,14 +255,15 @@ json* parseATCR(uint8_t* frame, uint16_t frameLength){
       for(int i=0; i < frameLength-5; ++i)
         data += char(frame[i+8]);
     }
+    json tmpData = json::parse(data);
     json *tmp = new json{
         {"DESC", "Local AT Command Response"},
-        {"TYPE", 0x88},
-        {"OVERHEAD", {
+        {"FRAME TYPE", 0x88},
+        {"FRAME OVERHEAD", {
             {"FRAME ID", frame[4]},
             {"COMMAND", cmd},
             {"STATUS", frame[7]}}},
-        {"DATA",data}
+        {"FRAME DATA",tmpData}
     };
     return tmp;
 }
@@ -269,9 +271,9 @@ json* parseATCR(uint8_t* frame, uint16_t frameLength){
 json* parseMS(uint8_t* frame, uint16_t frameLength){
     json *tmp = new json{
         {"DESC", "MODEM STATUS"},
-        {"TYPE", 0x8A},
-        {"OVERHEAD", {"FRAME ID", frame[3]}},
-        {"DATA", {"STATUS", frame[4]}}
+        {"FRAME TYPE", 0x8A},
+        {"FRAME OVERHEAD", {"FRAME ID", frame[3]}},
+        {"FRAME DATA", {"STATUS", frame[4]}}
     };
     return tmp;
 }
@@ -282,9 +284,9 @@ json* parseTS(uint8_t* frame, uint16_t frameLength){
     dst += uint8_t(frame[6]);
     json *tmp = new json{
         {"DESC", "Transmission Status"},
-        {"TYPE", 0x8B},
-        {"OVERHEAD", {"FRAME ID", frame[4]}},
-        {"DATA", {
+        {"FRAME TYPE", 0x8B},
+        {"FRAME OVERHEAD", {"FRAME ID", frame[4]}},
+        {"FRAME DATA", {
             {"DESTINATION", dst},
             {"TRANSMIT RETRY", frame[7]},
             {"DELIVERY STATUS", frame[8]},
@@ -307,15 +309,16 @@ json* receivePacket(uint8_t* frame, uint16_t frameLength){
       for(int i=0; i < frameLength-12; ++i)
         data += char(frame[i+15]);
     }
+    json tmpData = json::parse(data);
     json *tmp = new json{
         {"DESC", "Receive Packet"},
-        {"TYPE", 0x90},
-        {"OVERHEAD", {
+        {"FRAME TYPE", 0x90},
+        {"FRAME OVERHEAD", {
             {"FRAME ID", frame[4]},
             {"DST64", dst64},
             {"DST16", dst16},
             {"OPT", frame[14]}}},
-        {"DATA",data}
+        {"FRAME DATA", tmpData}
     };
     return tmp;
 }
@@ -340,10 +343,11 @@ json* explicitRX(uint8_t* frame, uint16_t frameLength){
       for(int i=0; i < frameLength-18; ++i)
         data += char(frame[i+21]);
     }
+    json tmpData = json::parse(data);
     json *tmp = new json{
         {"DESC", "Receive Packet"},
-        {"TYPE", 0x91},
-        {"OVERHEAD", {
+        {"FRAME TYPE", 0x91},
+        {"FRAME OVERHEAD", {
             {"FRAME ID", frame[4]},
             {"DST64", dst64},
             {"DST16", dst16},
@@ -352,7 +356,7 @@ json* explicitRX(uint8_t* frame, uint16_t frameLength){
             {"CLUSTER", cluster},
             {"PROFILE", profile},
             {"OPT", frame[20]}}},
-        {"DATA",data}
+        {"FRAME DATA",tmpData}
     };
     return tmp;
 }
@@ -374,15 +378,16 @@ json* remoteAT(uint8_t* frame, uint16_t frameLength){
       for(int i=0; i < frameLength-15; ++i)
         data += char(frame[i+18]);
     }
+    json tmpData = json::parse(data);
     json *tmp = new json{
         {"DESC", "Receive Packet"},
-        {"TYPE", 0x97},
-        {"OVERHEAD", {
+        {"FRAME TYPE", 0x97},
+        {"FRAME OVERHEAD", {
             {"FRAME ID", frame[4]},
             {"DST64", dst64},
             {"DST16", dst16}}},
-        {"DATA",{
-            {"DATA", data},
+        {"FRAME DATA",{
+            {"DATA", tmpData},
             {"AT CMD", cmd},
             {"STATUS", frame[17]}}},
 
